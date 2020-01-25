@@ -23,10 +23,11 @@ def msg_receive(ch, method, properties, body):
     ######## Parse incoming message #######
     # Sensor name and channel is in the routing key (split on .)
     # print("[%s]: %s " % (method.routing_key, data))
-    global x,dataTbls,sensors
+    global x,dataTbls,counterTbls
     
     if not method.routing_key in dataTbls:
         dataTbls[method.routing_key] = np.zeros
+        counterTbls[method.routing_key] = np.zeros
     data = json.loads(body)
     timestamp = data["results"][0]['timestamp'] # get timestamp
     spectrum = data["results"][0]['values'] # get freq values
@@ -42,25 +43,25 @@ def msg_receive(ch, method, properties, body):
     frqVals = np.asarray(frqVals)
     frqVals = np.concatenate((frqVals,[np.sqrt(np.mean(frqVals**2))])) # concatenate rms
     dataTbls[method.routing_key] = np.vstack((frqVals,dataTbls[method.routing_key][0:-1,:])) # concatenate new frequencies to already existing
-#    for k in y.T: # iterate the rows of y and perform linear regression
-#        slope, intercept, r, p, std_err = sps.linregress(x, y)
-#        Cross = predictCrossTime(4) # predict time it will cross threshold if continues in this trend
-#        if Cross>0 and Cross<360: # If it will cross in less than 1 hour (number of 10 seconds in an hour)
-#            counter[:,k] = np.concatenate(([1], counter[0:-1,k])) 
-#        else:
-#            counter[:,k] = np.concatenate(([0], counter[0:-1,k])) 
-#        if np.sum(counter[:,k]) >= 0.8*counter.shape[0]: # if in the last N minutes it will cross in less than 1 hour in 80% of the times
-#            if k<len(freqs):
-#                txtstr = 'trend detected in freq %d' %freqs[k]
-#            else:
-#                txtstr = 'trend detected in RMS'
-#            win32api.MessageBox(0,txtstr,'alert')
+    for k in y.T: # iterate the rows of y and perform linear regression
+        slope, intercept, r, p, std_err = sps.linregress(x, y)
+        Cross = predictCrossTime(4) # predict time it will cross threshold if continues in this trend
+        if Cross>0 and Cross<360: # If it will cross in less than 1 hour (number of 10 seconds in an hour)
+            counterTbls[method.routing_key][:,k] = np.concatenate(([1], counterTbls[method.routing_key][0:-1,k])) # append 1 to counter
+        else:
+            counterTbls[method.routing_key][:,k] = np.concatenate(([0], counterTbls[method.routing_key][0:-1,k])) # append 0 to counter
+        if np.sum(counterTbls[method.routing_key][:,k]) >= 0.8*counterTbls[method.routing_key].shape[0]: # if in the last N minutes it will cross in less than 1 hour in 80% of the times, alert
+            if k<len(freqs):
+                txtstr = 'trend detected in freq %d' %freqs[k]
+            else:
+                txtstr = 'trend detected in RMS'
+            win32api.MessageBox(0,txtstr,'alert')
            
 
 if __name__ == "__main__":
     counter = np.zeros((30,20),dtype = int) # first 19 are freqs, 20 is energy (30 rows, last 5 minutes
-    dataTbls = dict()
-    sensors = []
+    dataTbls = dict() # dictionary, keys are sensor names and values are spectrums
+    counterTbls = dict()  # dictionary, keys are sensor names and values are binary counters if trend detected or not
     x = np.arange(200) # last 200 points
     # Setup AMQP Connection
     parameters = pika.URLParameters('amqps://eco-monitoring:p4_HVv%Mb6j&)P@amqp-ext.munisense.net:5671/eco-monitoring')
