@@ -26,8 +26,8 @@ def msg_receive(ch, method, properties, body):
     global x,dataTbls,counterTbls
     
     if not method.routing_key in dataTbls:
-        dataTbls[method.routing_key] = np.zeros
-        counterTbls[method.routing_key] = np.zeros
+        dataTbls[method.routing_key] = np.zeros(200,26)
+        counterTbls[method.routing_key] = np.zeros(200,26)
     data = json.loads(body)
     timestamp = data["results"][0]['timestamp'] # get timestamp
     spectrum = data["results"][0]['values'] # get freq values
