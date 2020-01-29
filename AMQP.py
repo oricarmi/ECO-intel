@@ -18,7 +18,7 @@ from email.mime.base import MIMEBase
 from email import encoders 
 
 def append2log(TitleWord):
-    with open('r"C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt', 'a') as file:
+    with open(r'C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt', 'a') as file:
         file.write(TitleWord)
     return
 def sendEmail(bodyTxt,imgPath):
@@ -62,11 +62,12 @@ def plotDataAndRegression(y,TitlePlt,TitleWord,toSave = 1):
     sendEmail(TitleWord,r"C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\test.png")
     append2log(TitleWord)
     return
-
 def linearModel(x):
     return slope*x+intercept
 def predictCrossTime(threshold = 3):
     return (threshold - intercept)/slope
+
+
 
 def msg_receive(ch, method, properties, body):
     ######## Parse incoming message #######
@@ -105,12 +106,12 @@ def msg_receive(ch, method, properties, body):
             Cross = predictCrossTime(thrshldsTbls[method.routing_key][ind])
         if Cross>0 and Cross<360 and slope>0: # If it will cross in less than 1 hour (number of 10 seconds in an hour)
             counterTbls[method.routing_key][:,ind] = np.concatenate((counterTbls[method.routing_key][1:,ind],[1])) # append 1 to counter
-            thrshldsTbls[method.routing_key][ind] =  np.mean(k)+3*np.std(k) # set threshold to this moment of anomaly
+            thrshldsTbls[method.routing_key][ind] =  np.mean(k)+0.2*np.std(k) # set threshold to this moment of anomaly
             print("[%s]: %s, %s " % (method.routing_key, timestmpsTbls[method.routing_key][-1],frqVals[ind]))
         else:
             counterTbls[method.routing_key][:,ind] = np.concatenate((counterTbls[method.routing_key][1:,ind],[0])) # append 0 to counter
             thrshldsTbls[method.routing_key][ind] =  -1 # reset so that threshold is updated next time it is anomal
-        if np.sum(counterTbls[method.routing_key][:,ind]) >= 0.8*counterTbls[method.routing_key].shape[0] and np.count_nonzero(k)>k.size/1.5: # if in the last N minutes it will cross in less than 1 hour in 80% of the times, alert
+        if np.sum(counterTbls[method.routing_key][-201:-1,ind]) >= 0.8*counterTbls[method.routing_key][-201:-1,ind].shape[0] and np.count_nonzero(k)>k.size/1.5: # if in the last N minutes it will cross in less than 1 hour in 80% of the times, alert
             if ind<len(freqs):
                 txtstr = 'trend detected in freq %d [Hz]' %freqs[ind]
             else:
@@ -120,6 +121,9 @@ def msg_receive(ch, method, properties, body):
             print(txtstr)
         ind+=1   
 
+
+
+
 if __name__ == "__main__":
     if not 'dataTbls' in locals(): # if dont exist, make new dictionaries of data
         numPtsBack = 1080 # number of data points to track (6 10secs in min, 60 min in hr. 360 - 1 hour, max:8640)
@@ -128,8 +132,8 @@ if __name__ == "__main__":
         timestmpsTbls = dict() # dictionary, keys are sensor names and values are timestamps of corresponding line in dataTbls/counterTbls
         thrshldsTbls = dict() #dictionary, keys are sensor names and values are thresholds
         x = np.arange(numPtsBack) # last numPtsBack points
-    if not os.path.exists('r"C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt'):
-        file(filename, 'w').close()
+    if not os.path.exists(r'C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt'):
+        open(r'C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt', 'w').close()
         
     # Setup AMQP Connection
     parameters = pika.URLParameters('amqps://eco-monitoring:p4_HVv%Mb6j&)P@amqp-ext.munisense.net:5671/eco-monitoring')
