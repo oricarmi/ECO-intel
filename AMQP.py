@@ -15,6 +15,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText 
 from email.mime.base import MIMEBase 
 from email import encoders 
+import datetime
 
 def append2log(TitleWord):
     with open(pathLog, 'a') as file:
@@ -76,7 +77,7 @@ def msg_receive(ch, method, properties, body):
         timestmpsTbls[method.routing_key] = [] # timestamps list
         thrshldsTbls[method.routing_key] = -1*np.ones(26) # an adaptive threshold for every frequency and rms (size 26). if -1, compare to updating threshold. if not -1, compare to the set threshold
     data = json.loads(body) # parse the body of message received as json object
-    timestmpsTbls[method.routing_key].append(data["results"][0]['timestamp']) # get timestamp and append at end
+    timestmpsTbls[method.routing_key].append(datetime.datetime.strptime(data["results"][0]['timestamp'][:-1], '%Y-%m-%dT%H:%M:%S.%f')) # get timestamp and append at end
     if len(timestmpsTbls[method.routing_key])>numPtsBack: # remove first if exceeds numptsback
         timestmpsTbls[method.routing_key].pop(0)    
     spectrum = data["results"][0]['values'] # get freq values
@@ -102,7 +103,7 @@ def msg_receive(ch, method, properties, body):
         if Cross>0 and Cross<360 and slope>0: # If it will cross in less than 1 hour (number of 10 seconds in an hour)
             counterTbls[method.routing_key][:,ind] = np.concatenate((counterTbls[method.routing_key][1:,ind],[1])) # append 1 to this channel, this frequency counter
             thrshldsTbls[method.routing_key][ind] =  np.mean(k)+2*np.std(k) # set threshold to this moment of anomaly
-            print("[%s]: %s, %s " % (method.routing_key, timestmpsTbls[method.routing_key][-1],frqVals[ind]))
+#            print("[%s]: %s, %s " % (method.routing_key, timestmpsTbls[method.routing_key][-1],freqs[ind]))
         else:
             counterTbls[method.routing_key][:,ind] = np.concatenate((counterTbls[method.routing_key][1:,ind],[0])) # append 0 to this channel, this frequency counter
             thrshldsTbls[method.routing_key][ind] =  -1 # reset so that threshold is updated next time it is anomal
@@ -119,7 +120,7 @@ def msg_receive(ch, method, properties, body):
 
 if __name__ == "__main__":
     if not 'dataTbls' in locals(): # if dont exist, make new dictionaries of data
-        numPtsBack = 1080 # number of data points to track (6 10secs in min, 60 min in hr. 360 - 1 hour, max:8640)
+        numPtsBack = 1080 # number of data points to track (6 10secs in min, 60 min in hr ---> 360 - 1 hour. max:8640)
         dataTbls = dict() # dictionary, keys are sensor names and values are spectrums
         counterTbls = dict()  # dictionary, keys are sensor names and values are binary counters if trend detected or not
         timestmpsTbls = dict() # dictionary, keys are sensor names and values are timestamps of corresponding line in dataTbls/counterTbls
