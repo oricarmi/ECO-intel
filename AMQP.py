@@ -22,9 +22,9 @@ def append2log(TitleWord):
         file.write(TitleWord)
     return
 def sendEmail(bodyTxt,imgPath):
-    gmail_user = 'carmimeister@gmail.com'
-    gmail_password = '918273645'
-    to = ['Yair@eco-eng.co.il', 'Amit@eco-eng.co.il']
+    gmail_user = 'ecomonitoring2@gmail.com'
+    gmail_password = 'monitoring1234'
+    to = ['Yair@eco-eng.co.il', 'Amit@eco-eng.co.il','ecomonitoring2@gmail.com']
     msg = MIMEMultipart()    # instance of MIMEMultipart 
     msg['From'] = gmail_user # storing the senders email address       
     msg['To'] = ", ".join(to) # storing the receivers email address  
@@ -32,7 +32,7 @@ def sendEmail(bodyTxt,imgPath):
     body = 'Trend Detected - ' + bodyTxt # string to store the body of the mail 
     msg.attach(MIMEText(body, 'plain')) # attach the body with the msg instance 
     filename = 'test.png' 
-    attachment = open(imgPath, "rb") # open the file to be sent  
+    attachment = open(imgPath, "rb") # open the image file to be sent  
     p = MIMEBase('application', 'octet-stream') # instance of MIMEBase and named as p 
     p.set_payload((attachment).read())  # To change the payload into encoded form 
     encoders.encode_base64(p)  # encode into base64 
@@ -40,6 +40,7 @@ def sendEmail(bodyTxt,imgPath):
     msg.attach(p) # attach the instance 'p' to instance 'msg' 
     try:
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+#        server = smtplib.SMTP('eco.local')
 #        server.starttls()
         server.login(gmail_user, gmail_password)
         text = msg.as_string() 
@@ -97,12 +98,12 @@ def msg_receive(ch, method, properties, body):
     for k in dataTbls[method.routing_key].T: # iterate the rows (25 freqs & RMS) of this channel  
         slope, intercept, r, p, std_err = sps.linregress(x, k) #  perform linear regression
         if thrshldsTbls[method.routing_key][ind]<0: # if hasn't crossed, continue to check against updated mean and std
-            Cross = predictCrossTime(np.mean(k)+2*np.std(k)) # predict time it will cross threshold if continues in this trend (threshold set as mean of last half hour plus 3*std of last half hour)
+            Cross = predictCrossTime(np.mean(k)+1.5*np.std(k)) # predict time it will cross threshold if continues in this trend (threshold set as mean of last half hour plus 3*std of last half hour)
         else: # if it crossed, threshold is not -1 and compare to last threshold (last mean+3std that it crossed)
             Cross = predictCrossTime(thrshldsTbls[method.routing_key][ind])
         if Cross>0 and Cross<360 and slope>0: # If it will cross in less than 1 hour (number of 10 seconds in an hour)
             counterTbls[method.routing_key][:,ind] = np.concatenate((counterTbls[method.routing_key][1:,ind],[1])) # append 1 to this channel, this frequency counter
-            thrshldsTbls[method.routing_key][ind] =  np.mean(k)+2*np.std(k) # set threshold to this moment of anomaly
+            thrshldsTbls[method.routing_key][ind] =  np.mean(k)+1.5*np.std(k) # set threshold to this moment of anomaly
 #            print("[%s]: %s, %s " % (method.routing_key, timestmpsTbls[method.routing_key][-1],freqs[ind]))
         else:
             counterTbls[method.routing_key][:,ind] = np.concatenate((counterTbls[method.routing_key][1:,ind],[0])) # append 0 to this channel, this frequency counter
@@ -126,12 +127,13 @@ if __name__ == "__main__":
         timestmpsTbls = dict() # dictionary, keys are sensor names and values are timestamps of corresponding line in dataTbls/counterTbls
         thrshldsTbls = dict() #dictionary, keys are sensor names and values are thresholds
         x = np.arange(numPtsBack) # last numPtsBack points
-    pathLog = r'C:\Users\user\Desktop\Oric\ECO\intel - python\logfile.txt'#r'C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt'
-    pathImage = r'C:\Users\user\Desktop\Oric\ECO\intel - python\test.png'#r"C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\test.png"
+    pathLog = r'C:\Users\intel\anomaly detection\logfile.txt'# r'C:\Users\user\Desktop\Oric\ECO\intel - python\logfile.txt'#r'C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt'
+    pathImage = r'C:\Users\intel\anomaly detection\test.png' #r'C:\Users\user\Desktop\Oric\ECO\intel - python\test.png'#r"C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\test.png"
     if not os.path.exists(pathLog):
         open(pathLog, 'w').close()    
     # Setup AMQP Connection
     parameters = pika.URLParameters('amqps://eco-monitoring:p4_HVv%Mb6j&)P@amqp-ext.munisense.net:5671/eco-monitoring')
+    parameters.heartbeat=0
     print("Connecting AMQP..")
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
