@@ -16,7 +16,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText 
 from email.mime.base import MIMEBase 
 from email import encoders 
-import datetime
+import datetime 
 
   
 def kl_divergence(p, q):
@@ -34,20 +34,19 @@ class channell:
         self.timestmps = [] # timestamps of corresponding line in dataTbls/counterTbls
         self.thrshlds = -1*np.ones(26) # thresholds of each frequency and RMS
         self.x = np.arange(numPtsBack) # last numPtsBack points
-        self.bslnDist = {'N': 1, 'mu': np.zeros(26), 'sigma': np.zeros(26) }
-    
+        self.bslnDist = {'N': 1, 'mu': np.zeros(26), 'sigma': np.zeros(26), 'kld': []}
+        self.monthly = {'mu': [], 'sigma': []}
     def appendDataLine(self,data,timestmp):
-        if len(self.timestmps)==0:
-            self.dataTbl.append(data) # append to data tables (of day)
-            self.timestmps.append(timestmp) # append to timestamps array
-        elif datetime.datetime.date(self.timestmps[-1]) == datetime.datetime.date(timestmp): # if still on the same day
-            self.dataTbl.append(data) # append to data tables (of day)
-            self.timestmps.append(timestmp) # append to timestamps array
-            if len(self.timestmps)>8640:
-                self.dataTbl.pop(0)
-                self.timestmps.pop(0)
-        else:
-            self.DayEnd()
+        self.dataTbl.append(data) # append to data tables (of day)
+        self.timestmps.append(timestmp) # append to timestamps array
+        if len(self.timestmps)>1:
+            if (datetime.datetime.date(self.timestmps[-1]) != datetime.datetime.date(self.timestmps[-2])): # if not on the same day
+                self.DayEnd() # call day end
+            if self.timestmps[-1].month != self.timestmps[-2].month: # if not on the same day
+                self.MonthEnd() # call month end
+        if len(self.timestmps)>8640: # if more than one day has been appended, remove first line
+            self.dataTbl.pop(0)
+            self.timestmps.pop(0)
         return
             
     def plotDataAndRegression(self,y,intercept,slope,r,TitlePlt,TitleWord,toSave = 1):
@@ -72,13 +71,16 @@ class channell:
             kk = k[-self.numPtsBack:]
             slope, intercept, r, p, std_err = sps.linregress(self.x,kk) # perform linear regression on last N hours (data tables continues to append until end of day)
             if self.thrshlds[ind]<0: # if hasn't crossed, continue to check against updated mean and std
-                Cross = predictCrossTime(slope, intercept,np.mean(kk)+2*np.std(kk)) # predict time it will cross threshold if continues in this trend (threshold set as mean of last half hour plus 3*std of last half hour)
+                Cross = predictCrossTime(slope, intercept,np.mean(kk)+np.std(kk)) # predict time it will cross threshold if continues in this trend (threshold set as mean of last half hour plus 3*std of last half hour)
             else: # if it crossed, threshold is not -1 and compare to last threshold (last mean+3std that it crossed)
                 Cross = predictCrossTime(slope, intercept,self.thrshlds[ind])
-            if Cross>0 and Cross<360 and slope>0: # If it will cross in less than 1 hour (number of 10 seconds in an hour)
+            if Cross>0 and Cross<self.numPtsBack/2 and slope>0: # If it will cross in less than 1 hour (number of 10 seconds in an hour)
                 self.counterTbl[:,ind] = np.concatenate((self.counterTbl[1:,ind],[1])) # append 1 to counter (of this column (freq or rms))
-                self.thrshlds[ind] =  np.mean(kk)+2*np.std(kk) # set threshold to this moment of anomaly
-                print("[%s]: %s, %s " % (self.name, self.timestmps[-1],freqs[ind]))
+                self.thrshlds[ind] =  np.mean(kk)+np.std(kk) # set threshold to this moment of anomaly
+                if ind<25:
+                    print("[%s]: %s, %s " % (self.name, self.timestmps[-1],freqs[ind]))
+                else:
+                    print("[%s]: %s, RMS " % (self.name, self.timestmps[-1]))
             else:
                 self.counterTbl[:,ind] = np.concatenate((self.counterTbl[1:,ind],[0])) # append 0 to counter
                 self.thrshlds[ind] =  -1 # reset so that threshold is updated next time it is anomal
@@ -88,7 +90,7 @@ class channell:
                 else: # it is the rms
                     txtstr = 'trend detected in RMS'
                 self.plotDataAndRegression(kk,intercept,slope,r,txtstr,self.name+' '+self.timestmps[-1].strftime("%m/%d/%Y, %H:%M:%S"))
-                self.counterTbls[:,ind] = np.zeros(200) # make zeros to not alert many times
+                self.counterTbl[:,ind] = np.zeros(200) # make zeros to not alert many times
                 print(txtstr)
             ind+=1  
         return
@@ -96,13 +98,18 @@ class channell:
     def DayEnd(self):  
         ind = 0
         self.bslnDist['N'] += 1
+        tempM = []
+        tempS = []
+        rng = np.arange(-10, 10, 0.001)
         for k in np.asarray(self.dataTbl).T: # iterate the rows (25 freqs & RMS) of this channel  
             Mu = np.mean(k)
             Sig = np.std(k)
-            rng = np.arange(-10, 10, 0.001)
-            if not self.bslnDist['mu'][ind]==0 and self.bslnDist['sigma'][ind]==0: # if not empty the distribution data
-                KLD = self.kl_divergence(norm.pdf(rng,self.bslnDist['mu'][ind],self.bslnDist['sigma'][ind]),norm.pdf(rng, Mu, Sig)) # calculate kullback leibnitz divergence of this day and the baseline distribution
-                if KLD<100: # if KL divergence is low (dists don't differ much), update baseline distribution
+            tempM.append(Mu)
+            tempS.append(Sig)
+            if not (self.bslnDist['mu'][ind]==0 and self.bslnDist['sigma'][ind]<0.5): # if not empty the distribution data
+                KLD = kl_divergence(norm.pdf(rng,self.bslnDist['mu'][ind],self.bslnDist['sigma'][ind]),norm.pdf(rng, Mu, Sig)) # calculate kullback leibnitz divergence of this day and the baseline distribution
+                self.bslnDist['kld'][ind].append(KLD)
+                if KLD<150: # if KL divergence is low (dists don't differ much), update baseline distribution
                     self.bslnDist['mu'][ind] = ((self.bslnDist['N']-1)*self.bslnDist['mu'][ind]+Mu)/self.bslnDist['N'] # calculate new mean 
                     self.bslnDist['sigma'][ind] = ((self.bslnDist['N']-1)*self.bslnDist['sigma'][ind]+Sig)/self.bslnDist['N'] # calculate new mean std 
                 else: # KL is high and this day's distribution is different than baseline (abnormal)
@@ -114,9 +121,27 @@ class channell:
             else: # it is empty, initialize with this mu and sigma
                 self.bslnDist['mu'][ind] = Mu
                 self.bslnDist['sigma'][ind] = Sig
-            ind += 1
-
-
+            ind+=1
+        self.monthly['mu'].append(tempM) # append daily mus of all freqs to monthly
+        self.monthly['sigma'].append(tempS) # append daily sigmas of all freqs to monthly
+        return
+    
+    def MonthEnd(self):
+        # Call this when a month ends, to trend on the mus and sigmas of all frequencies and RMS of past month, plot data & send email, alert if trend detected during the month                
+        ind = 0
+        for k1,k2 in np.asarray(self.monthly.mu).T:
+            slope, intercept, r, p, std_err = sps.linregress(self.x,k1) # perform linear regression on mus
+            if ind<25:
+                self.plotDataAndRegression(k1,intercept,slope,r,'Monthly daily averages of ',self.name + freqs[ind] + '[Hz]')
+            else:
+                self.plotDataAndRegression(k1,intercept,slope,r,'Monthly daily averages of',self.name + 'RMS') 
+            slope, intercept, r, p, std_err = sps.linregress(self.x,k2) # perform linear regression on sigmas
+            if ind<25:
+                self.plotDataAndRegression(k2,intercept,slope,r,'Monthly daily stds of ',self.name + freqs[ind] + '[Hz]')
+            else:
+                self.plotDataAndRegression(k2,intercept,slope,r,'Monthly daily stds of',self.name + 'RMS') 
+            ind = 0
+        return
 def append2log(TitleWord):
     with open(pathLog, 'a') as file:
         file.write(TitleWord)
@@ -124,8 +149,7 @@ def append2log(TitleWord):
 def sendEmail(bodyTxt,imgPath):
     gmail_user = 'ecomonitoring2@gmail.com'
     gmail_password = 'monitoring1234'
-    to = ['Yair@eco-eng.co.il', 'Amit@eco-eng.co.il','ecomonitoring2@gmail.com'
-          ]
+    to = ['ecomonitoring2@gmail.com'] #'Yair@eco-eng.co.il', 'Amit@eco-eng.co.il',
     msg = MIMEMultipart()    # instance of MIMEMultipart 
     msg['From'] = gmail_user # storing the senders email address       
     msg['To'] = ", ".join(to) # storing the receivers email address  
@@ -178,8 +202,8 @@ def msg_receive(ch, method, properties, body):
     channels[thisChannel].detectTrend()
 
 if __name__ == "__main__":
-    pathLog = r'C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt'#r'C:\Users\user\Desktop\Oric\ECO\intel - python\logfile.txt'
-    pathImage = r"C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\test.png"#r'C:\Users\user\Desktop\Oric\ECO\intel - python\test.png'#
+    pathLog = r'C:\Users\intel\anomaly detection\logfile.txt' #r'C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\logfile.txt'#r'C:\Users\user\Desktop\Oric\ECO\intel - python\logfile.txt'
+    pathImage = r'C:\Users\intel\anomaly detection\test.png' #r"C:\Users\Ori\Desktop\Ori\ECO\intel - python\anomaly detection\test.png"#r'C:\Users\user\Desktop\Oric\ECO\intel - python\test.png'#
     if not 'channels' in locals():
         channels = dict()
     if not os.path.exists(pathLog):
